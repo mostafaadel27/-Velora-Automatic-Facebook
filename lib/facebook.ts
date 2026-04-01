@@ -3,7 +3,7 @@
  * Used by the webhook handler to reply to comments and send DMs.
  */
 
-const GRAPH_API_BASE = "https://graph.facebook.com/v19.0";
+const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
 
 /**
  * Reply to a comment on a Facebook post.
@@ -44,15 +44,18 @@ export async function replyToComment(
 /**
  * Send a private message (DM) to the person who commented.
  * Uses the Page's "private_replies" feature (comment_id based).
+ * Falls back to Messenger Send API if private_replies fails.
  */
 export async function sendPrivateReply(
   commentId: string,
   message: string,
-  pageAccessToken: string
+  pageAccessToken: string,
+  commenterId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Attempt 1: private_replies endpoint
     const url = `${GRAPH_API_BASE}/${commentId}/private_replies`;
-    console.log(`[FB_DM] POST ${url.replace(pageAccessToken, '***')}`);
+    console.log(`[FB_DM] POST private_replies for comment ${commentId}`);
 
     const res = await fetch(url, {
       method: "POST",
@@ -65,21 +68,89 @@ export async function sendPrivateReply(
 
     const data = await res.json();
 
-    if (data.error) {
-      console.error("[FB_DM_ERROR]", JSON.stringify(data.error));
+    if (!data.error) {
+      console.log(`[FB_DM_SUCCESS] Sent private reply for comment ${commentId}`);
+      return { success: true };
+    }
 
-      // If private_replies fails, try sending via Messenger Send API as a fallback
-      if (data.error.code === 10 || data.error.code === 200) {
-        console.log("[FB_DM] private_replies failed, this may be because the user hasn't messaged the page before or the comment is too old.");
+    console.error("[FB_DM_ERROR]", JSON.stringify(data.error));
+
+    // Attempt 2: Fallback to Messenger Send API if we have the commenter's ID
+    if (commenterId) {
+      console.log(`[FB_DM] private_replies failed (code: ${data.error.code}), trying Send API with PSID: ${commenterId}`);
+      const sendResult = await sendDirectMessage(commenterId, message, pageAccessToken);
+      if (sendResult.success) {
+        console.log(`[FB_DM_FALLBACK_SUCCESS] Sent via Send API to ${commenterId}`);
+        return { success: true };
       }
+      console.error(`[FB_DM_FALLBACK_FAILED]`, sendResult.error);
+      return { success: false, error: `private_replies failed: ${data.error.message}. Send API also failed: ${sendResult.error}` };
+    }
 
+    return { success: false, error: `${data.error.message} (code: ${data.error.code})` };
+  } catch (error) {
+    console.error("[FB_DM_EXCEPTION]", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Subscribe a Facebook Page to receive webhook events for this app.
+ * THIS IS CRITICAL — without this call, Facebook will NOT send any
+ * webhook events (comments, messages) for this page.
+ */
+export async function subscribePageToApp(
+  pageId: string,
+  pageAccessToken: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const url = `${GRAPH_API_BASE}/${pageId}/subscribed_apps`;
+    console.log(`[FB_SUBSCRIBE] Subscribing page ${pageId} to app webhooks...`);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subscribed_fields: "feed,messages,messaging_postbacks",
+        access_token: pageAccessToken,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      console.error("[FB_SUBSCRIBE_ERROR]", JSON.stringify(data.error));
       return { success: false, error: `${data.error.message} (code: ${data.error.code})` };
     }
 
-    console.log(`[FB_DM_SUCCESS] Sent private reply for comment ${commentId}`);
+    console.log(`[FB_SUBSCRIBE_SUCCESS] Page ${pageId} subscribed! Response:`, data);
     return { success: true };
   } catch (error) {
-    console.error("[FB_DM_EXCEPTION]", error);
+    console.error("[FB_SUBSCRIBE_EXCEPTION]", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Check current webhook subscriptions for a page.
+ */
+export async function getPageSubscriptions(
+  pageId: string,
+  pageAccessToken: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const url = `${GRAPH_API_BASE}/${pageId}/subscribed_apps?access_token=${pageAccessToken}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.error) {
+      console.error("[FB_SUBSCRIPTIONS_ERROR]", JSON.stringify(data.error));
+      return { success: false, error: data.error.message };
+    }
+
+    return { success: true, data: data.data };
+  } catch (error) {
+    console.error("[FB_SUBSCRIPTIONS_EXCEPTION]", error);
     return { success: false, error: String(error) };
   }
 }

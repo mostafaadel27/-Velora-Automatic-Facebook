@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { subscribePageToApp } from "@/lib/facebook";
 
 export async function GET() {
   try {
@@ -18,14 +19,19 @@ export async function GET() {
       where: { userId }
     });
 
-    // If page exists, return it immediately
+    // If page exists, ensure it's subscribed to webhooks then return it
     if (page) {
+      // Re-subscribe every time to make sure the page is receiving events
+      const subResult = await subscribePageToApp(page.pageId, page.accessToken);
+      console.log(`[PAGES_GET] Re-subscribe page ${page.pageId}: ${subResult.success ? '✅' : '❌ ' + subResult.error}`);
+
       return NextResponse.json({
         pages: [{
           id: page.id,
           pageId: page.pageId,
           name: page.name,
           picture: page.picture,
+          webhookSubscribed: subResult.success,
         }]
       });
     }
@@ -39,7 +45,7 @@ export async function GET() {
     }
 
     // Call Facebook Graph API to get user's pages
-    const graphUrl = `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,picture&access_token=${user.facebookAccessToken}`;
+    const graphUrl = `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${user.facebookAccessToken}`;
     const fbRes = await fetch(graphUrl);
     const fbData = await fbRes.json();
 
@@ -66,12 +72,18 @@ export async function GET() {
       }
     });
 
+    // 🔑 CRITICAL: Subscribe the page to webhooks so we receive comment & message events
+    const subResult = await subscribePageToApp(fbPage.id, fbPage.access_token);
+    console.log(`[PAGES_GET] Subscribe new page ${fbPage.id}: ${subResult.success ? '✅ SUCCESS' : '❌ FAILED: ' + subResult.error}`);
+
     return NextResponse.json({
       pages: [{
         id: page.id,
         pageId: page.pageId,
         name: page.name,
         picture: page.picture,
+        webhookSubscribed: subResult.success,
+        subscriptionError: subResult.success ? undefined : subResult.error,
       }]
     });
 

@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
             // ── Send Private DM ──
             if (flow.dmText) {
               logWebhook("ACTION", `Sending private reply to comment ${commentId}: "${flow.dmText}"`);
-              const res = await sendPrivateReply(commentId, flow.dmText, page.accessToken);
+              const res = await sendPrivateReply(commentId, flow.dmText, page.accessToken, commenterId);
               if (res.success) {
                 logWebhook("ACTION", `✅ Private DM sent successfully`);
                 if (contact) await saveMessage(contact.id, flow.dmText, "OUTBOUND");

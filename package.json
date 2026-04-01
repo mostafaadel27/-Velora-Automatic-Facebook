@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
+    "@prisma/adapter-libsql": "^6.19.3",
     "@prisma/client": "^6.19.2",
     "@xyflow/react": "^12.10.2",
     "bcrypt": "^6.0.0",
