@@ -7,14 +7,17 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
+  const tursoUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
   const tursoToken = process.env.TURSO_AUTH_TOKEN;
 
+  const validTursoUrl = typeof tursoUrl === "string" && tursoUrl !== "undefined" && tursoUrl !== "null" && tursoUrl.startsWith("libsql");
+  const validTursoToken = typeof tursoToken === "string" && tursoToken !== "undefined" && tursoToken !== "null" ? tursoToken : undefined;
+
   // If Turso env vars are set (production/Vercel), use LibSQL adapter
-  if (tursoUrl && tursoToken) {
+  if (validTursoUrl) {
     const libsql = createClient({
-      url: tursoUrl,
-      authToken: tursoToken,
+      url: tursoUrl!,
+      authToken: validTursoToken,
     });
     // @ts-ignore - type mismatch between libsql client and prisma adapter
     const adapter = new PrismaLibSQL(libsql);
