@@ -62,29 +62,40 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === "facebook") {
-        const email = user.email || profile?.email;
-        if (!email) {
-          throw new Error("Facebook account must have an email associated with it.");
-        }
+        const email = user.email || profile?.email || null;
 
-        const existingUser = await prisma.user.findUnique({
-          where: { email }
-        });
+        let existingUser = null;
+        
+        if (email) {
+          existingUser = await prisma.user.findUnique({
+            where: { email }
+          });
+        }
+        
+        if (!existingUser) {
+          existingUser = await prisma.user.findUnique({
+            where: { facebookId: account.providerAccountId }
+          });
+        }
 
         if (existingUser) {
           await prisma.user.update({
-            where: { email },
+            where: { id: existingUser.id },
             data: {
               facebookConnected: true,
               facebookId: account.providerAccountId,
               facebookAccessToken: account.access_token,
+              ...(email && !existingUser.email ? { email } : {}), // Update email if previously empty
             }
           });
         } else {
+          // Fallback if no email is provided to avoid error
+          const fallbackEmail = email || `${account.providerAccountId}@facebook.local`;
+          
           await prisma.user.create({
             data: {
-              name: user.name,
-              email: email,
+              name: user.name || "Facebook User",
+              email: fallbackEmail,
               isVerified: true,
               image: user.image,
               facebookConnected: true,
