@@ -15,12 +15,10 @@ function createPrismaClient() {
 
   // If Turso env vars are set (production/Vercel), use LibSQL adapter
   if (validTursoUrl) {
-    const libsql = createClient({
+    const adapter = new PrismaLibSQL({
       url: tursoUrl!,
       authToken: validTursoToken,
     });
-    // @ts-ignore - type mismatch between libsql client and prisma adapter
-    const adapter = new PrismaLibSQL(libsql);
     return new PrismaClient({ adapter } as any);
   }
 
